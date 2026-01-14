@@ -45,3 +45,6 @@ ehthumbs.db
 
 # Testing
 coverage/
+
+# Planning (local only)
+.planning/

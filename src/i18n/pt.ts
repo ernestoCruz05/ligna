@@ -261,6 +261,33 @@ export const pt = {
     minValue: 'O valor mínimo é',
     maxValue: 'O valor máximo é',
   },
+
+  // Charta Integration
+  charta: {
+    title: 'Exportar para Charta',
+    notConfigured: 'Charta não configurado',
+    configure: 'Configurar',
+    configureCharta: 'Configurar Charta',
+    serverUrl: 'URL do Servidor',
+    serverUrlPlaceholder: 'ex: https://charta.example.com',
+    apiKey: 'Chave de API (opcional)',
+    apiKeyPlaceholder: 'Deixe vazio se não for necessário',
+    testConnection: 'Testar Conexão',
+    testing: 'A testar...',
+    connectionSuccess: 'Conexão estabelecida!',
+    connectionFailed: 'Falha na conexão',
+    save: 'Guardar',
+    cancel: 'Cancelar',
+    disconnect: 'Desligar',
+    selectProject: 'Selecionar Obra (opcional)',
+    selectProjectPlaceholder: 'Enviar para Inbox',
+    noProjects: 'Sem projetos ativos',
+    exporting: 'A enviar...',
+    exportSuccess: 'Enviado para Charta com sucesso!',
+    exportFailed: 'Falha ao enviar para Charta',
+    exportCutList: 'Enviar para Charta',
+    viewInCharta: 'Ver no Charta',
+  },
 } as const;
 
 export type Translations = typeof pt;

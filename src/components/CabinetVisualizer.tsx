@@ -270,7 +270,7 @@ export function CabinetVisualizer({
   }
 
   return (
-    <div ref={containerRef} className={`flex flex-col items-center justify-center h-full ${className}`}>
+    <div ref={containerRef} className={`cabinet-visualizer-container flex flex-col items-center justify-center h-full ${className}`}>
       {/* Cabinet info */}
       <div className="text-center mb-3">
         <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -286,7 +286,7 @@ export function CabinetVisualizer({
         width={svgWidth}
         height={svgHeight}
         viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-        className={`select-none ${isDragging !== null ? 'cursor-row-resize' : ''}`}
+        className={`cabinet-visualizer-svg select-none ${isDragging !== null ? 'cursor-row-resize' : ''}`}
         onMouseMove={handleDragMove}
         onMouseUp={handleDragEnd}
         onMouseLeave={handleDragEnd}
