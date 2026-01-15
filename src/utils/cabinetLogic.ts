@@ -278,6 +278,12 @@ export function getEdgeBandingThickness(
  * Calculates all cut parts for a cabinet based on pattern rules and dimensions.
  * This is the core "logic engine" that processes pattern rules into concrete parts.
  * The ruleSet determines construction method and affects part dimensions.
+ *
+ * Edge banding adjustment:
+ * When edge banding is applied to a part, the cut dimension is reduced by the banding
+ * thickness so the final banded dimension matches the design intent.
+ * - Length is reduced for L1/L2 banding
+ * - Width is reduced for W1/W2 banding
  */
 export function calculateParts(
   pattern: CabinetPattern,
@@ -287,7 +293,8 @@ export function calculateParts(
   zoneProportions?: number[],
   ruleSet?: RuleSet,
   materials?: Material[],
-  materialOverrides?: Record<string, string>
+  materialOverrides?: Record<string, string>,
+  edgeBandingId?: string
 ): CutPart[] {
   // Build expression context with ruleSet for construction-aware dimensions
   let context = buildExpressionContext(dimensions, globalSettings, pattern, ruleSet);
@@ -357,13 +364,43 @@ export function calculateParts(
       part_thickness: partThickness,
     };
 
-    const length = evaluateExpression(rule.lengthExpression, ruleContext);
-    const width = evaluateExpression(rule.widthExpression, ruleContext);
+    const designLength = evaluateExpression(rule.lengthExpression, ruleContext);
+    const designWidth = evaluateExpression(rule.widthExpression, ruleContext);
     const quantity = Math.max(1, Math.round(evaluateExpression(rule.quantityExpression, ruleContext)));
 
+    // Calculate edge banding adjustments
+    // Cut dimensions are reduced by banding thickness so banded part matches design dimension
+    let lengthAdjustment = 0;
+    let widthAdjustment = 0;
+
+    if (rule.edgeBanding) {
+      // Resolve edge banding material:
+      // 1. Pattern's edge banding material (pattern.materials.edgeBanding.materialId)
+      // 2. Fallback to edgeBandingId parameter (default edge banding)
+      const resolvedEdgeBandingId =
+        pattern.materials?.edgeBanding?.materialId ?? edgeBandingId;
+      const ebThickness = getEdgeBandingThickness(
+        resolvedEdgeBandingId,
+        materialsList,
+        0
+      );
+
+      // Subtract edge banding thickness from length for each banded length edge
+      if (rule.edgeBanding.length1) lengthAdjustment += ebThickness;
+      if (rule.edgeBanding.length2) lengthAdjustment += ebThickness;
+
+      // Subtract edge banding thickness from width for each banded width edge
+      if (rule.edgeBanding.width1) widthAdjustment += ebThickness;
+      if (rule.edgeBanding.width2) widthAdjustment += ebThickness;
+    }
+
+    // Final cut dimensions = design dimensions - edge banding adjustments
+    const cutLength = designLength - lengthAdjustment;
+    const cutWidth = designWidth - widthAdjustment;
+
     // Skip invalid parts
-    if (length <= 0 || width <= 0) {
-      console.warn(`Skipping invalid part: ${rule.partName} (L: ${length}, W: ${width})`);
+    if (cutLength <= 0 || cutWidth <= 0) {
+      console.warn(`Skipping invalid part: ${rule.partName} (L: ${cutLength}, W: ${cutWidth})`);
       continue;
     }
 
@@ -380,8 +417,8 @@ export function calculateParts(
 
     parts.push({
       partName: rule.partName,
-      length: Math.round(length),
-      width: Math.round(width),
+      length: Math.round(cutLength),
+      width: Math.round(cutWidth),
       quantity,
       materialId: resolvedMaterialId,
       material: rule.material,
