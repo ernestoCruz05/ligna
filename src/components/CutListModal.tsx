@@ -3,7 +3,7 @@
 // ============================================
 
 import { useState, useMemo } from 'react';
-import { useCabinetStore, useCurrentProject, useGlobalSettings } from '../store/cabinetStore';
+import { useCabinetStore, useCurrentProject, useGlobalSettings, useMaterials } from '../store/cabinetStore';
 import { calculateParts } from '../utils/cabinetLogic';
 import type { CutPart } from '../types';
 import { pt } from '../i18n/pt';
@@ -111,6 +111,7 @@ export default function CutListModal({ isOpen, onClose }: CutListModalProps) {
   const { ruleSets, ui, patterns } = useCabinetStore();
   const project = useCurrentProject();
   const globalSettings = useGlobalSettings();
+  const materials = useMaterials();
   
   const [selectedRuleSetId, setSelectedRuleSetId] = useState<string>(
     ui.cutListModal.selectedRuleSetId || ruleSets[0]?.id || ''
@@ -154,18 +155,20 @@ export default function CutListModal({ isOpen, onClose }: CutListModalProps) {
       const pattern = patterns.find(p => p.id === cabinet.patternId);
       if (!pattern) continue;
       const cabinetParts = calculateParts(
-        pattern, 
-        cabinet.dimensions, 
-        globalSettings, 
-        cabinet.variableOverrides, 
+        pattern,
+        cabinet.dimensions,
+        globalSettings,
+        cabinet.variableOverrides,
         cabinet.zoneProportions,
-        selectedRuleSet // Now passing the selected rule set for construction-aware calculations
+        selectedRuleSet, // Now passing the selected rule set for construction-aware calculations
+        materials, // Pass materials for thickness resolution
+        cabinet.materialOverrides // Pass instance-level material overrides
       );
       // Add cabinet name to each part for grouping
       allParts.push(...cabinetParts.map(p => ({ ...p, cabinetName: cabinet.name })));
     }
     return allParts;
-  }, [project, globalSettings, isGenerated, patterns, selectedRuleSet]);
+  }, [project, globalSettings, isGenerated, patterns, selectedRuleSet, materials]);
 
   const handleGenerate = () => {
     if (!selectedRuleSet) return;

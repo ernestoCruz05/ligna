@@ -13,6 +13,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
     currentProject,
     patterns,
     globalSettings,
+    materials,
     ui,
     toggleDarkMode,
     createProject,
@@ -38,11 +39,20 @@ export function Header({ onMenuToggle }: HeaderProps) {
       if (!pattern) return { name: cabinet.name, parts: [] };
       return {
         name: cabinet.name,
-        parts: calculateParts(pattern, cabinet.dimensions, globalSettings, cabinet.variableOverrides, cabinet.zoneProportions, defaultRuleSet),
+        parts: calculateParts(
+          pattern,
+          cabinet.dimensions,
+          globalSettings,
+          cabinet.variableOverrides,
+          cabinet.zoneProportions,
+          defaultRuleSet,
+          materials, // Pass materials for thickness resolution
+          cabinet.materialOverrides // Pass instance-level material overrides
+        ),
       };
     });
     return flattenProjectToCutList(cabinetsWithParts);
-  }, [currentProject, patterns, globalSettings, defaultRuleSet]);
+  }, [currentProject, patterns, globalSettings, defaultRuleSet, materials]);
 
   const handleExportCSV = () => {
     if (!currentProject || allParts.length === 0) {
