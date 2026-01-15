@@ -5,6 +5,7 @@ import type {
   ExpressionContext,
   ExportOptions,
   RuleSet,
+  Material,
 } from '../types';
 
 // ============================================
@@ -225,6 +226,28 @@ export function buildExpressionContext(
 }
 
 // ============================================
+// Material Thickness Resolution
+// ============================================
+
+/**
+ * Resolves material thickness from the materials library.
+ *
+ * @param materialId - The ID of the material to look up
+ * @param materials - Array of available materials from the library
+ * @param fallbackThickness - Value to return if material is not found
+ * @returns The material's thickness, or fallbackThickness if not found
+ */
+export function getMaterialThickness(
+  materialId: string | undefined,
+  materials: Material[],
+  fallbackThickness: number
+): number {
+  if (!materialId) return fallbackThickness;
+  const material = materials.find((m) => m.id === materialId);
+  return material?.thickness ?? fallbackThickness;
+}
+
+// ============================================
 // Main Part Calculator
 // ============================================
 
@@ -239,7 +262,8 @@ export function calculateParts(
   globalSettings: GlobalSettings,
   variableOverrides?: Record<string, number>,
   zoneProportions?: number[],
-  ruleSet?: RuleSet
+  ruleSet?: RuleSet,
+  materials?: Material[]
 ): CutPart[] {
   // Build expression context with ruleSet for construction-aware dimensions
   let context = buildExpressionContext(dimensions, globalSettings, pattern, ruleSet);
@@ -283,11 +307,29 @@ export function calculateParts(
 
   const parts: CutPart[] = [];
 
+  // Resolve materials array (fallback to empty array if not provided)
+  const materialsList = materials ?? [];
+
   // Process each part rule
   for (const rule of pattern.partRules) {
-    const length = evaluateExpression(rule.lengthExpression, context);
-    const width = evaluateExpression(rule.widthExpression, context);
-    const quantity = Math.max(1, Math.round(evaluateExpression(rule.quantityExpression, context)));
+    // Resolve material thickness for this part rule
+    // If rule has materialId, use its thickness; otherwise use global material_thickness
+    const resolvedMaterialId = rule.materialId;
+    const partThickness = getMaterialThickness(
+      resolvedMaterialId,
+      materialsList,
+      context.material_thickness
+    );
+
+    // Add part_thickness to context for this rule's expression evaluation
+    const ruleContext = {
+      ...context,
+      part_thickness: partThickness,
+    };
+
+    const length = evaluateExpression(rule.lengthExpression, ruleContext);
+    const width = evaluateExpression(rule.widthExpression, ruleContext);
+    const quantity = Math.max(1, Math.round(evaluateExpression(rule.quantityExpression, ruleContext)));
 
     // Skip invalid parts
     if (length <= 0 || width <= 0) {
@@ -311,6 +353,7 @@ export function calculateParts(
       length: Math.round(length),
       width: Math.round(width),
       quantity,
+      materialId: resolvedMaterialId,
       material: rule.material,
       grain: rule.grain,
       edgeBanding: edgeBanding || undefined,
