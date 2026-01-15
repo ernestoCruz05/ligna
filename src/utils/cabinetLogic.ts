@@ -6,6 +6,8 @@ import type {
   ExportOptions,
   RuleSet,
   Material,
+  JointType,
+  JointConfig,
 } from '../types';
 
 // ============================================
@@ -157,6 +159,12 @@ export function buildExpressionContext(
   const doorGap = ruleSet?.offsets.doorGap || 3;
   const shelfInset = ruleSet?.offsets.shelfInset || 20;
   const drawerSlideOffset = ruleSet?.offsets.drawerSlideOffset || 12.5;
+  
+  // Drawer box dimensions (can be overridden in ruleSet)
+  // These represent common manufacturing clearances
+  const drawerDepthClearance = ruleSet?.offsets.drawerDepthClearance || 50; // Behind drawer for slides/cables
+  const drawerBoxHeightClearance = ruleSet?.offsets.drawerBoxHeightClearance || 30; // Above drawer box for slides
+  const shelfFitClearance = ruleSet?.offsets.shelfFitClearance || 2; // Small gap for shelf insertion
 
   // Build base context
   const context: ExpressionContext = {
@@ -192,6 +200,9 @@ export function buildExpressionContext(
     door_gap: doorGap,
     shelf_inset: shelfInset,
     drawer_slide_offset: drawerSlideOffset,
+    drawer_depth_clearance: drawerDepthClearance,
+    drawer_box_height_clearance: drawerBoxHeightClearance,
+    shelf_fit_clearance: shelfFitClearance,
 
     // Zone counts
     drawer_count: drawerCount,
@@ -271,6 +282,79 @@ export function getEdgeBandingThickness(
 }
 
 // ============================================
+// Joint Dimension Calculator
+// ============================================
+
+/**
+ * Calculates dimensional adjustments for joints on a part.
+ * 
+ * Joint calculation logic:
+ * - When a part is 'inserted' into a joint (e.g., shelf in dado):
+ *   - If joint.extendsInsertedPiece is true: ADD joint depth to dimension
+ *   - Apply tolerance (subtract) for assembly fit
+ * - When a part is 'receiving' a joint (e.g., side with dado cut):
+ *   - No dimensional change (the groove is machined, doesn't change cut size)
+ * 
+ * @param joints - Joint configuration for the part's edges
+ * @param jointTypes - Array of available joint type definitions
+ * @returns Object with length and width adjustments (positive = add, negative = subtract)
+ */
+export function calculateJointAdjustments(
+  joints: JointConfig | undefined,
+  jointTypes: JointType[]
+): { lengthAdjustment: number; widthAdjustment: number } {
+  let lengthAdjustment = 0;
+  let widthAdjustment = 0;
+
+  if (!joints) {
+    return { lengthAdjustment, widthAdjustment };
+  }
+
+  // Helper to calculate adjustment for a single edge
+  const getEdgeAdjustment = (
+    edgeConfig: JointConfig['length1'],
+    jointTypes: JointType[]
+  ): number => {
+    if (!edgeConfig) return 0;
+
+    const jointType = jointTypes.find((jt) => jt.id === edgeConfig.jointTypeId);
+    if (!jointType) {
+      console.warn(`Joint type not found: ${edgeConfig.jointTypeId}`);
+      return 0;
+    }
+
+    // Only 'inserted' parts get dimensional adjustments
+    if (edgeConfig.role !== 'inserted') {
+      return 0;
+    }
+
+    // Use override depth if provided, otherwise use joint type's default
+    const depth = edgeConfig.depthOverride ?? jointType.depth;
+    const tolerance = jointType.tolerance ?? 0;
+
+    if (jointType.extendsInsertedPiece) {
+      // Piece extends into the joint, add depth minus tolerance
+      return depth - tolerance;
+    } else {
+      // Joint doesn't extend piece, only apply negative tolerance for fit
+      return -tolerance;
+    }
+  };
+
+  // Calculate length adjustments (from width1/width2 edges - they affect the length dimension)
+  // Width edges are at the ends of the length
+  lengthAdjustment += getEdgeAdjustment(joints.width1, jointTypes);
+  lengthAdjustment += getEdgeAdjustment(joints.width2, jointTypes);
+
+  // Calculate width adjustments (from length1/length2 edges - they affect the width dimension)
+  // Length edges are at the ends of the width
+  widthAdjustment += getEdgeAdjustment(joints.length1, jointTypes);
+  widthAdjustment += getEdgeAdjustment(joints.length2, jointTypes);
+
+  return { lengthAdjustment, widthAdjustment };
+}
+
+// ============================================
 // Main Part Calculator
 // ============================================
 
@@ -279,11 +363,21 @@ export function getEdgeBandingThickness(
  * This is the core "logic engine" that processes pattern rules into concrete parts.
  * The ruleSet determines construction method and affects part dimensions.
  *
+ * Dimension calculation order:
+ * 1. Base dimension from expression evaluation
+ * 2. + Joint adjustments (extensions for inserted pieces in dados, etc.)
+ * 3. - Edge banding adjustments (reduce cut size so banded part matches design)
+ *
  * Edge banding adjustment:
  * When edge banding is applied to a part, the cut dimension is reduced by the banding
  * thickness so the final banded dimension matches the design intent.
  * - Length is reduced for L1/L2 banding
  * - Width is reduced for W1/W2 banding
+ *
+ * Joint adjustment:
+ * When a part is 'inserted' into a joint (e.g., shelf in dado), and the joint
+ * type has extendsInsertedPiece=true, the dimension is extended by the joint depth.
+ * This accounts for the part extending into the groove.
  */
 export function calculateParts(
   pattern: CabinetPattern,
@@ -294,7 +388,8 @@ export function calculateParts(
   ruleSet?: RuleSet,
   materials?: Material[],
   materialOverrides?: Record<string, string>,
-  edgeBandingId?: string
+  edgeBandingId?: string,
+  jointTypes?: JointType[]
 ): CutPart[] {
   // Build expression context with ruleSet for construction-aware dimensions
   let context = buildExpressionContext(dimensions, globalSettings, pattern, ruleSet);
@@ -370,8 +465,8 @@ export function calculateParts(
 
     // Calculate edge banding adjustments
     // Cut dimensions are reduced by banding thickness so banded part matches design dimension
-    let lengthAdjustment = 0;
-    let widthAdjustment = 0;
+    let edgeBandingLengthAdj = 0;
+    let edgeBandingWidthAdj = 0;
     let resolvedEdgeBandingId: string | undefined;
 
     if (rule.edgeBanding) {
@@ -387,17 +482,22 @@ export function calculateParts(
       );
 
       // Subtract edge banding thickness from length for each banded length edge
-      if (rule.edgeBanding.length1) lengthAdjustment += ebThickness;
-      if (rule.edgeBanding.length2) lengthAdjustment += ebThickness;
+      if (rule.edgeBanding.length1) edgeBandingLengthAdj += ebThickness;
+      if (rule.edgeBanding.length2) edgeBandingLengthAdj += ebThickness;
 
       // Subtract edge banding thickness from width for each banded width edge
-      if (rule.edgeBanding.width1) widthAdjustment += ebThickness;
-      if (rule.edgeBanding.width2) widthAdjustment += ebThickness;
+      if (rule.edgeBanding.width1) edgeBandingWidthAdj += ebThickness;
+      if (rule.edgeBanding.width2) edgeBandingWidthAdj += ebThickness;
     }
 
-    // Final cut dimensions = design dimensions - edge banding adjustments
-    const cutLength = designLength - lengthAdjustment;
-    const cutWidth = designWidth - widthAdjustment;
+    // Calculate joint adjustments
+    // Joint extensions ADD to dimensions (piece extends into dado/groove)
+    const jointAdj = calculateJointAdjustments(rule.joints, jointTypes ?? []);
+
+    // Final cut dimensions:
+    // = design dimension + joint extensions - edge banding reductions
+    const cutLength = designLength + jointAdj.lengthAdjustment - edgeBandingLengthAdj;
+    const cutWidth = designWidth + jointAdj.widthAdjustment - edgeBandingWidthAdj;
 
     // Skip invalid parts
     if (cutLength <= 0 || cutWidth <= 0) {
@@ -431,6 +531,8 @@ export function calculateParts(
       partName: rule.partName,
       length: Math.round(cutLength),
       width: Math.round(cutWidth),
+      designLength: Math.round(designLength),
+      designWidth: Math.round(designWidth),
       quantity,
       materialId: resolvedMaterialId,
       material: rule.material,

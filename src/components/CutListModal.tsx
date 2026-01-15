@@ -108,7 +108,7 @@ function CutListTable({ parts, groupByMaterial }: { parts: CutPart[]; groupByMat
 }
 
 export default function CutListModal({ isOpen, onClose }: CutListModalProps) {
-  const { ruleSets, ui, patterns } = useCabinetStore();
+  const { ruleSets, ui, patterns, joints } = useCabinetStore();
   const project = useCurrentProject();
   const globalSettings = useGlobalSettings();
   const materials = useMaterials();
@@ -162,13 +162,15 @@ export default function CutListModal({ isOpen, onClose }: CutListModalProps) {
         cabinet.zoneProportions,
         selectedRuleSet, // Now passing the selected rule set for construction-aware calculations
         materials, // Pass materials for thickness resolution
-        cabinet.materialOverrides // Pass instance-level material overrides
+        cabinet.materialOverrides, // Pass instance-level material overrides
+        undefined, // edgeBandingId - use pattern default
+        joints // Pass joint types for dimension adjustments
       );
       // Add cabinet name to each part for grouping
       allParts.push(...cabinetParts.map(p => ({ ...p, cabinetName: cabinet.name })));
     }
     return allParts;
-  }, [project, globalSettings, isGenerated, patterns, selectedRuleSet, materials]);
+  }, [project, globalSettings, isGenerated, patterns, selectedRuleSet, materials, joints]);
 
   const handleGenerate = () => {
     if (!selectedRuleSet) return;

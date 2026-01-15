@@ -13,10 +13,12 @@ import type {
   ValidationMessage,
   InsertedElement,
   RuleSet,
+  JointType,
 } from '../types';
 import { defaultPatterns } from '../data/defaultPatterns';
 import { defaultMaterials } from '../data/defaultMaterials';
 import { defaultHardware } from '../data/defaultHardware';
+import { defaultJoints } from '../data/defaultJoints';
 import { DEFAULT_VALIDATION_LIMITS } from '../types';
 
 // ============================================
@@ -223,6 +225,13 @@ interface CabinetStore {
   deleteHardware: (id: string) => void;
   getHardwareById: (id: string) => HardwareItem | undefined;
 
+  // Joints Library
+  joints: JointType[];
+  addJoint: (joint: JointType) => void;
+  updateJoint: (id: string, updates: Partial<JointType>) => void;
+  deleteJoint: (id: string) => void;
+  getJointById: (id: string) => JointType | undefined;
+
   // Pattern Library
   patterns: CabinetPattern[];
   addPattern: (pattern: CabinetPattern) => void;
@@ -370,6 +379,28 @@ export const useCabinetStore = create<CabinetStore>()(
         })),
 
       getHardwareById: (id) => get().hardware.find((h) => h.id === id),
+
+      // ========== Joints Library ==========
+      joints: defaultJoints,
+
+      addJoint: (joint) =>
+        set((state) => ({
+          joints: [...state.joints, joint],
+        })),
+
+      updateJoint: (id, updates) =>
+        set((state) => ({
+          joints: state.joints.map((j) =>
+            j.id === id ? { ...j, ...updates, updatedAt: now() } : j
+          ),
+        })),
+
+      deleteJoint: (id) =>
+        set((state) => ({
+          joints: state.joints.filter((j) => j.id !== id),
+        })),
+
+      getJointById: (id) => get().joints.find((j) => j.id === id),
 
       // ========== Pattern Library ==========
       patterns: defaultPatterns,

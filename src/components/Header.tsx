@@ -14,6 +14,7 @@ export function Header({ onMenuToggle }: HeaderProps) {
     patterns,
     globalSettings,
     materials,
+    joints,
     ui,
     toggleDarkMode,
     createProject,
@@ -47,12 +48,14 @@ export function Header({ onMenuToggle }: HeaderProps) {
           cabinet.zoneProportions,
           defaultRuleSet,
           materials, // Pass materials for thickness resolution
-          cabinet.materialOverrides // Pass instance-level material overrides
+          cabinet.materialOverrides, // Pass instance-level material overrides
+          undefined, // edgeBandingId
+          joints // Pass joint types for dimension adjustments
         ),
       };
     });
     return flattenProjectToCutList(cabinetsWithParts);
-  }, [currentProject, patterns, globalSettings, defaultRuleSet, materials]);
+  }, [currentProject, patterns, globalSettings, defaultRuleSet, materials, joints]);
 
   const handleExportCSV = () => {
     if (!currentProject || allParts.length === 0) {

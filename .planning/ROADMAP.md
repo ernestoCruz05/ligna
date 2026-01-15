@@ -18,8 +18,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Material System** - Create material definitions with thickness, edge banding properties
 - [x] **Phase 2: Part-Material Association** - Connect parts to materials, enable per-part material assignment
-- [ ] **Phase 3: Edge Banding Integration** - Calculate dimensions accounting for edge banding thickness
-- [ ] **Phase 4: Joint/Connection System** - Model joint types and their dimensional impacts
+- [x] **Phase 3: Edge Banding Integration** - Calculate dimensions accounting for edge banding thickness
+- [x] **Phase 4: Joint/Connection System** - Model joint types and their dimensional impacts
 - [ ] **Phase 5: Measurement Calculation Refinement** - Integrate all factors into accurate final dimensions
 - [ ] **Phase 6: Validation & Testing** - Verify calculations against real-world cabinet scenarios
 
@@ -55,7 +55,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal**: Integrate material thickness, edge banding, and joint calculations into unified accurate dimensions
 **Depends on**: Phase 4
 **Research**: Unlikely (applying patterns from earlier research)
-**Plans**: TBD
+**Plans**: 1 (05-01)
 
 ### Phase 6: Validation & Testing
 **Goal**: Verify cut list accuracy against known cabinet configurations and real-world scenarios
@@ -72,7 +72,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Material System | 1/1 | Complete | 2026-01-15 |
 | 2. Part-Material Association | 1/1 | Complete | 2026-01-15 |
-| 3. Edge Banding Integration | 0/TBD | Not started | - |
-| 4. Joint/Connection System | 0/TBD | Not started | - |
-| 5. Measurement Calculation Refinement | 0/TBD | Not started | - |
+| 3. Edge Banding Integration | 1/1 | Complete | 2026-01-15 |
+| 4. Joint/Connection System | 1/1 | Complete | 2026-01-15 |
+| 5. Measurement Calculation Refinement | 0/1 | Planned | - |
 | 6. Validation & Testing | 0/TBD | Not started | - |

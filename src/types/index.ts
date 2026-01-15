@@ -72,6 +72,93 @@ export interface HardwareItem {
   updatedAt?: string;
 }
 
+// ============================================
+// JOINTS & CONNECTIONS
+// ============================================
+
+/**
+ * Joint type definition for cabinet construction.
+ * Joints affect how parts fit together and may impact cut dimensions.
+ * 
+ * Common joint types in cabinet making:
+ * - Butt: Simple edge-to-edge (no dimensional impact)
+ * - Dado: Groove cut into receiving piece (shelf extends into groove)
+ * - Rabbet: L-shaped cut on edge (back panels typically)
+ * - Dowel/Cam-lock: Hardware-based (no cut dimension impact)
+ */
+export interface JointType {
+  id: string;
+  name: string;
+  description?: string;
+  category: 'butt' | 'dado' | 'rabbet' | 'tongue-groove' | 'dowel' | 'cam-lock' | 'pocket-screw' | 'miter' | 'other';
+  /**
+   * Depth of the joint cut in mm (how deep into the receiving piece).
+   * For dado: typically 1/3 to 1/2 of material thickness (e.g., 6mm in 18mm board)
+   * For rabbet: typically equals the inserted piece thickness
+   */
+  depth: number;
+  /**
+   * Width of the joint cut in mm (if applicable).
+   * For dado: equals the inserted piece thickness
+   * For rabbet: equals the inserted piece thickness
+   */
+  width?: number;
+  /**
+   * Whether the inserted piece dimension should be extended by the joint depth.
+   * true: Shelf depth = internal_depth + dado_depth (shelf extends into dado)
+   * false: No extension (piece stops at surface)
+   */
+  extendsInsertedPiece: boolean;
+  /**
+   * Gap/tolerance to subtract from inserted piece for fit.
+   * Typically 0.5-1mm for wood movement and assembly ease.
+   */
+  tolerance?: number;
+  /**
+   * Whether this joint requires a specific material thickness to work.
+   * Some joints (like 6mm dado) only work with specific board thicknesses.
+   */
+  requiredMaterialThickness?: number;
+  // Timestamps
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * Joint configuration for a single edge of a part.
+ * Specifies which joint type is used and the role of this part in the joint.
+ */
+export interface JointEdgeConfig {
+  /** Reference to a JointType.id */
+  jointTypeId: string;
+  /**
+   * Role of this part in the joint:
+   * - 'inserted': This part goes INTO the joint (e.g., shelf in a dado)
+   * - 'receiving': This part HAS the joint cut (e.g., side panel with dado groove)
+   */
+  role: 'inserted' | 'receiving';
+  /**
+   * Override the joint depth for this specific edge.
+   * Useful when the same joint type is used with different depths.
+   */
+  depthOverride?: number;
+}
+
+/**
+ * Joint configuration for all edges of a part.
+ * Each edge can have a different joint type and role.
+ */
+export interface JointConfig {
+  /** Joint on the first length edge (typically front or top) */
+  length1?: JointEdgeConfig;
+  /** Joint on the second length edge (typically back or bottom) */
+  length2?: JointEdgeConfig;
+  /** Joint on the first width edge (typically left or top) */
+  width1?: JointEdgeConfig;
+  /** Joint on the second width edge (typically right or bottom) */
+  width2?: JointEdgeConfig;
+}
+
 /**
  * Hardware usage rule - defines what hardware a zone/cabinet needs
  */
@@ -372,6 +459,9 @@ export interface PartRule {
     width1?: boolean | string;
     width2?: boolean | string;
   };
+  // Joint/connection configuration per edge
+  // Defines how this part connects to adjacent parts
+  joints?: JointConfig;
   // Optional flags
   isOptional?: boolean;
   condition?: string;
@@ -461,8 +551,10 @@ export interface CabinetPattern {
  */
 export interface CutPart {
   partName: string;
-  length: number;
-  width: number;
+  length: number;        // Final cut dimension (after all adjustments)
+  width: number;         // Final cut dimension (after all adjustments)
+  designLength?: number; // Original design dimension before joint/edge-banding adjustments
+  designWidth?: number;  // Original design dimension before joint/edge-banding adjustments
   quantity: number;
   // Material
   materialId?: string;
@@ -679,7 +771,10 @@ export interface RuleSet {
     drawerFrontGap: number; // Gap around drawer fronts (usually 2-4mm)
     doorGap: number; // Gap around doors
     shelfInset: number; // How much shelf is inset from front
-    drawerSlideOffset: number; // Offset for drawer slides
+    drawerSlideOffset: number; // Offset for drawer slides (each side)
+    drawerDepthClearance?: number; // Clearance behind drawer for slides/cables (default: 50mm)
+    drawerBoxHeightClearance?: number; // Clearance above drawer box for slide operation (default: 30mm)
+    shelfFitClearance?: number; // Small gap for shelf insertion (default: 2mm)
     backPanelThickness: number;
     backGrooveDepth: number;
   };

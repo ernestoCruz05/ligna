@@ -1,5 +1,30 @@
 import { useMemo, useState, useCallback, useRef } from 'react';
 import type { CabinetPattern, CabinetInstance, GlobalSettings, PatternZone } from '../types';
+import { ZoneEditModal } from './ZoneEditModal';
+
+// ============================================
+// Configuration Constants
+// ============================================
+const VISUALIZER_CONFIG = {
+  // Layout
+  padding: 40,
+  maxWidth: 320,
+  maxHeight: 420,
+  maxScale: 0.5,
+  
+  // Zone constraints
+  minZoneProportion: 0.08, // Minimum 8% per zone (allows more flexibility)
+  minZoneHeightMm: 50,     // Absolute minimum zone height in mm
+  
+  // Visual elements
+  shelfThickness: 8,       // Visual thickness of shelf in SVG
+  dividerThickness: 6,     // Visual thickness of divider in SVG
+  
+  // Interaction
+  dividerHitAreaHeight: 16, // Height of invisible hit area for dividers
+  dragHandleWidth: 40,
+  dragHandleHeight: 8,
+} as const;
 
 // Type for calculated zone with position data
 interface CalculatedZone extends PatternZone {
@@ -12,6 +37,7 @@ interface CalculatedZone extends PatternZone {
   proportion: number;
   level: number; // Nesting level
   columnIndex?: number;
+  zoneIndex: number; // Index in the zones array
 }
 
 // Type for calculated column
@@ -35,6 +61,7 @@ interface CabinetVisualizerProps {
   };
   globalSettings: GlobalSettings;
   onZoneProportionsChange?: (proportions: number[]) => void;
+  onZoneUpdate?: (zoneId: string, updates: Partial<PatternZone>) => void;
   className?: string;
 }
 
@@ -44,10 +71,12 @@ export function CabinetVisualizer({
   dimensions,
   globalSettings,
   onZoneProportionsChange,
+  onZoneUpdate,
   className = '',
 }: CabinetVisualizerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState<number | null>(null);
+  const [editingZone, setEditingZone] = useState<CalculatedZone | null>(null);
   
   // Get zone proportions from cabinet or default to equal distribution
   const zoneProportions = useMemo(() => {
@@ -60,20 +89,22 @@ export function CabinetVisualizer({
     return Array(zoneCount).fill(1 / zoneCount);
   }, [pattern, cabinet?.zoneProportions]);
 
-  // SVG dimensions and scaling
-  const padding = 40;
-  const maxWidth = 320;
-  const maxHeight = 420;
+  // SVG dimensions and scaling - use config constants
+  const { padding, maxWidth, maxHeight, maxScale } = VISUALIZER_CONFIG;
 
   // Safely get dimensions with defaults
   const cabinetWidth = dimensions?.width || 600;
   const cabinetHeight = dimensions?.height || 720;
   const materialThickness = globalSettings?.materialThickness || 18;
+  
+  // Real internal dimensions (in mm)
+  const realInternalHeight = cabinetHeight - materialThickness * 2;
+  const realInternalWidth = cabinetWidth - materialThickness * 2;
 
   // Calculate scale to fit cabinet in view
   const scaleX = (maxWidth - padding * 2) / cabinetWidth;
   const scaleY = (maxHeight - padding * 2) / cabinetHeight;
-  const scale = Math.min(scaleX, scaleY, 0.5);
+  const scale = Math.min(scaleX, scaleY, maxScale);
 
   const scaledWidth = cabinetWidth * scale;
   const scaledHeight = cabinetHeight * scale;
@@ -94,7 +125,7 @@ export function CabinetVisualizer({
     setIsDragging(dividerIndex);
   }, []);
 
-  // Handle drag move
+  // Handle drag move - distributes change across ALL zones below the divider
   const handleDragMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (isDragging === null || !pattern) return;
 
@@ -105,49 +136,137 @@ export function CabinetVisualizer({
     // Convert to proportion
     const relativeY = (y - internalY) / internalHeight;
     
-    // Calculate cumulative proportions up to the dragged divider
+    const { minZoneProportion } = VISUALIZER_CONFIG;
+    const zoneCount = zoneProportions.length;
+    const newProportions = [...zoneProportions];
+    
+    // Calculate cumulative proportion up to the current divider
     let cumulativeBefore = 0;
     for (let i = 0; i <= isDragging; i++) {
       cumulativeBefore += zoneProportions[i];
     }
     
-    // Calculate the change needed
-    const minProportion = 0.15; // Minimum 15% per zone
-    const newProportions = [...zoneProportions];
+    // Calculate bounds for the divider position
+    const minDividerPos = minZoneProportion * (isDragging + 1);
+    const maxDividerPos = 1 - minZoneProportion * (zoneCount - isDragging - 1);
     
-    // New position for the divider
-    const newDividerPos = Math.max(
-      minProportion * (isDragging + 1),
-      Math.min(1 - minProportion * (newProportions.length - isDragging - 1), relativeY)
-    );
+    // Clamp the new divider position
+    const newDividerPos = Math.max(minDividerPos, Math.min(maxDividerPos, relativeY));
     
-    // Calculate cumulative up to current divider position
+    // Calculate how much the upper zone needs to change
     let cumulative = 0;
     for (let i = 0; i < isDragging; i++) {
       cumulative += newProportions[i];
     }
     
-    // Adjust the zones around the divider
     const newUpperZone = newDividerPos - cumulative;
     const oldUpperZone = newProportions[isDragging];
     const diff = newUpperZone - oldUpperZone;
     
-    if (newUpperZone >= minProportion && newProportions[isDragging + 1] - diff >= minProportion) {
-      newProportions[isDragging] = newUpperZone;
-      newProportions[isDragging + 1] = newProportions[isDragging + 1] - diff;
-      
-      // Normalize to ensure they sum to 1
-      const sum = newProportions.reduce((a, b) => a + b, 0);
-      const normalized = newProportions.map(p => p / sum);
-      
-      onZoneProportionsChange?.(normalized);
+    // Validate the upper zone meets minimum
+    if (newUpperZone < minZoneProportion) return;
+    
+    // Calculate total proportion available below the divider
+    let totalBelow = 0;
+    for (let i = isDragging + 1; i < zoneCount; i++) {
+      totalBelow += newProportions[i];
     }
+    
+    // Check if we can distribute the change
+    const newTotalBelow = totalBelow - diff;
+    const zonesBelow = zoneCount - isDragging - 1;
+    
+    if (newTotalBelow < minZoneProportion * zonesBelow) return;
+    
+    // Apply change to upper zone
+    newProportions[isDragging] = newUpperZone;
+    
+    // Distribute the difference proportionally among ALL zones below
+    // This is the key change - instead of just affecting the adjacent zone,
+    // we distribute the change proportionally to all zones below
+    if (totalBelow > 0) {
+      for (let i = isDragging + 1; i < zoneCount; i++) {
+        // Scale each zone's proportion based on its share of the total below
+        const shareOfBelow = newProportions[i] / totalBelow;
+        newProportions[i] = Math.max(minZoneProportion, newTotalBelow * shareOfBelow);
+      }
+    }
+    
+    // Normalize to ensure they sum to 1
+    const sum = newProportions.reduce((a, b) => a + b, 0);
+    const normalized = newProportions.map(p => p / sum);
+    
+    onZoneProportionsChange?.(normalized);
   }, [isDragging, pattern, zoneProportions, internalHeight, internalY, onZoneProportionsChange]);
 
   // Handle drag end
   const handleDragEnd = useCallback(() => {
     setIsDragging(null);
   }, []);
+
+  // Handle double-click on zone to open edit modal
+  const handleZoneDoubleClick = useCallback((zone: CalculatedZone) => {
+    setEditingZone(zone);
+  }, []);
+
+  // Handle height change from modal (converts mm to proportion)
+  const handleZoneHeightChange = useCallback((newHeightMm: number) => {
+    if (!editingZone || !pattern) return;
+    
+    const newProportion = newHeightMm / realInternalHeight;
+    const zoneIndex = editingZone.zoneIndex;
+    const newProportions = [...zoneProportions];
+    const oldProportion = newProportions[zoneIndex];
+    const diff = newProportion - oldProportion;
+    
+    // Calculate total proportion of zones below this one
+    let totalBelow = 0;
+    for (let i = zoneIndex + 1; i < newProportions.length; i++) {
+      totalBelow += newProportions[i];
+    }
+    
+    const { minZoneProportion } = VISUALIZER_CONFIG;
+    const zonesBelow = newProportions.length - zoneIndex - 1;
+    
+    // If there are zones below, distribute the change among them
+    if (zonesBelow > 0 && totalBelow > 0) {
+      const newTotalBelow = totalBelow - diff;
+      
+      // Check if we can make this change
+      if (newTotalBelow < minZoneProportion * zonesBelow) return;
+      if (newProportion < minZoneProportion) return;
+      
+      newProportions[zoneIndex] = newProportion;
+      
+      // Distribute proportionally among zones below
+      for (let i = zoneIndex + 1; i < newProportions.length; i++) {
+        const shareOfBelow = newProportions[i] / totalBelow;
+        newProportions[i] = Math.max(minZoneProportion, newTotalBelow * shareOfBelow);
+      }
+    } else if (zoneIndex === newProportions.length - 1) {
+      // Last zone - take from zones above proportionally
+      let totalAbove = 0;
+      for (let i = 0; i < zoneIndex; i++) {
+        totalAbove += newProportions[i];
+      }
+      
+      const newTotalAbove = totalAbove - diff;
+      if (newTotalAbove < minZoneProportion * zoneIndex) return;
+      
+      newProportions[zoneIndex] = newProportion;
+      
+      for (let i = 0; i < zoneIndex; i++) {
+        const shareOfAbove = newProportions[i] / totalAbove;
+        newProportions[i] = Math.max(minZoneProportion, newTotalAbove * shareOfAbove);
+      }
+    }
+    
+    // Normalize
+    const sum = newProportions.reduce((a, b) => a + b, 0);
+    const normalized = newProportions.map(p => p / sum);
+    
+    onZoneProportionsChange?.(normalized);
+  }, [editingZone, pattern, zoneProportions, realInternalHeight, onZoneProportionsChange]);
 
   // Check if pattern uses new column-based structure
   const hasColumns = pattern?.columns && pattern.columns.length > 0;
@@ -198,6 +317,7 @@ export function CabinetVisualizer({
           proportion: zoneProportion,
           level: 0,
           columnIndex: colIdx,
+          zoneIndex: zoneIdx,
         });
         
         currentY += zoneHeight;
@@ -247,6 +367,7 @@ export function CabinetVisualizer({
         actualHeight: Math.round((cabinetHeight - materialThickness * 2) * proportion),
         proportion,
         level: 0,
+        zoneIndex: i,
       });
       
       currentY += height;
@@ -326,14 +447,25 @@ export function CabinetVisualizer({
           // Zone colors based on type
           const fillColor = isDrawer ? '#fef3c7' : isDoor ? '#dbeafe' : isShelf || isOpening ? 'transparent' : '#ffffff';
           
-          // Shelf thickness is fixed (represents ~18mm material) - not proportional to zone
-          const shelfThickness = 8;
-          
-          // Divider panel thickness (represents ~18mm material)
-          const dividerThickness = 6;
+          // Visual thickness from config
+          const { shelfThickness, dividerThickness } = VISUALIZER_CONFIG;
           
           return (
-            <g key={zone.id}>
+            <g 
+              key={zone.id}
+              className="cursor-pointer"
+              onDoubleClick={() => handleZoneDoubleClick(zone)}
+            >
+              {/* Invisible hit area for double-click */}
+              <rect
+                x={zone.x}
+                y={zone.y}
+                width={zone.width}
+                height={zone.height}
+                fill="transparent"
+                className="hover:fill-blue-500/5"
+              />
+              
               {/* Divider visualization - vertical panel */}
               {isDivider && (
                 <>
@@ -620,8 +752,23 @@ export function CabinetVisualizer({
 
       {/* Help text */}
       <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-        Arraste os divisores para redimensionar
+        Arraste divisores ou dê duplo-clique para editar
       </p>
+
+      {/* Zone Edit Modal */}
+      <ZoneEditModal
+        isOpen={editingZone !== null}
+        zone={editingZone}
+        actualHeight={editingZone?.actualHeight ?? 0}
+        actualWidth={editingZone?.actualWidth}
+        proportion={editingZone?.proportion ?? 0}
+        totalInternalHeight={realInternalHeight}
+        totalInternalWidth={realInternalWidth}
+        globalSettings={globalSettings}
+        onClose={() => setEditingZone(null)}
+        onHeightChange={handleZoneHeightChange}
+        onZoneUpdate={onZoneUpdate ? (updates) => onZoneUpdate(editingZone!.id, updates) : undefined}
+      />
     </div>
   );
 }
