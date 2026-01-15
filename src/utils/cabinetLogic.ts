@@ -252,6 +252,24 @@ export function getMaterialThickness(
   return material?.thickness ?? fallbackThickness;
 }
 
+/**
+ * Resolves edge banding thickness from the materials library.
+ *
+ * @param edgeBandingId - The ID of the edge banding material to look up
+ * @param materials - Array of available materials from the library
+ * @param fallbackThickness - Value to return if edge banding is not found (default: 0)
+ * @returns The edge banding material's thickness, or fallbackThickness if not found
+ */
+export function getEdgeBandingThickness(
+  edgeBandingId: string | undefined,
+  materials: Material[],
+  fallbackThickness: number = 0
+): number {
+  if (!edgeBandingId) return fallbackThickness;
+  const material = materials.find((m) => m.id === edgeBandingId);
+  return material?.thickness ?? fallbackThickness;
+}
+
 // ============================================
 // Main Part Calculator
 // ============================================
