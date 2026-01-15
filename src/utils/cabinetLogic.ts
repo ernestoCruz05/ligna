@@ -372,12 +372,13 @@ export function calculateParts(
     // Cut dimensions are reduced by banding thickness so banded part matches design dimension
     let lengthAdjustment = 0;
     let widthAdjustment = 0;
+    let resolvedEdgeBandingId: string | undefined;
 
     if (rule.edgeBanding) {
       // Resolve edge banding material:
       // 1. Pattern's edge banding material (pattern.materials.edgeBanding.materialId)
       // 2. Fallback to edgeBandingId parameter (default edge banding)
-      const resolvedEdgeBandingId =
+      resolvedEdgeBandingId =
         pattern.materials?.edgeBanding?.materialId ?? edgeBandingId;
       const ebThickness = getEdgeBandingThickness(
         resolvedEdgeBandingId,
@@ -404,8 +405,11 @@ export function calculateParts(
       continue;
     }
 
-    // Build edge banding string
+    // Build edge banding string (for backward compatibility)
     let edgeBanding = '';
+    // Build edge banding details (material ID per edge)
+    let edgeBandingDetails: CutPart['edgeBandingDetails'];
+
     if (rule.edgeBanding) {
       const edges: string[] = [];
       if (rule.edgeBanding.length1) edges.push('L1');
@@ -413,6 +417,14 @@ export function calculateParts(
       if (rule.edgeBanding.width1) edges.push('W1');
       if (rule.edgeBanding.width2) edges.push('W2');
       edgeBanding = edges.join(', ');
+
+      // Populate edgeBandingDetails with material ID for each banded edge
+      edgeBandingDetails = {
+        length1: rule.edgeBanding.length1 ? resolvedEdgeBandingId : undefined,
+        length2: rule.edgeBanding.length2 ? resolvedEdgeBandingId : undefined,
+        width1: rule.edgeBanding.width1 ? resolvedEdgeBandingId : undefined,
+        width2: rule.edgeBanding.width2 ? resolvedEdgeBandingId : undefined,
+      };
     }
 
     parts.push({
@@ -424,6 +436,7 @@ export function calculateParts(
       material: rule.material,
       grain: rule.grain,
       edgeBanding: edgeBanding || undefined,
+      edgeBandingDetails,
     });
   }
 
