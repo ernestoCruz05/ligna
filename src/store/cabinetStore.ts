@@ -214,6 +214,7 @@ interface CabinetStore {
   updateMaterial: (id: string, updates: Partial<Material>) => void;
   deleteMaterial: (id: string) => void;
   getMaterialById: (id: string) => Material | undefined;
+  getCompatibleEdgeBanding: (materialId: string) => Material[];
 
   // Hardware Library
   hardware: HardwareItem[];
@@ -339,6 +340,14 @@ export const useCabinetStore = create<CabinetStore>()(
         })),
 
       getMaterialById: (id) => get().materials.find((m) => m.id === id),
+
+      getCompatibleEdgeBanding: (materialId: string) => {
+        const material = get().materials.find((m) => m.id === materialId);
+        if (!material?.compatibleEdgeBandingIds) return [];
+        return get().materials.filter((m) =>
+          material.compatibleEdgeBandingIds!.includes(m.id)
+        );
+      },
 
       // ========== Hardware Library ==========
       hardware: defaultHardware,
@@ -740,6 +749,11 @@ export const useSelectedCabinet = () => {
 export const useMaterialById = (id: string | undefined) => {
   const materials = useCabinetStore((state) => state.materials);
   return id ? materials.find((m) => m.id === id) : undefined;
+};
+
+export const useCompatibleEdgeBanding = (materialId: string | undefined) => {
+  const getCompatibleEdgeBanding = useCabinetStore((state) => state.getCompatibleEdgeBanding);
+  return materialId ? getCompatibleEdgeBanding(materialId) : [];
 };
 
 export const useHardwareById = (id: string | undefined) => {
