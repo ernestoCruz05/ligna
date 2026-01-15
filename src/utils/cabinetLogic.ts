@@ -72,8 +72,13 @@ export function buildExpressionContext(
 ): ExpressionContext {
   const { height, width, depth } = dimensions;
   const { backPanelGrooveDepth, defaultEdgeBanding } = settings;
-  
-  // Use pattern-specific material thicknesses if defined, otherwise fall back to global settings
+
+  // Material thickness precedence for expression context:
+  // Pattern-specific (pattern.materials.carcass.thickness) > Global settings (settings.materialThickness)
+  //
+  // Note: Per-part material overrides (instance-level) are handled separately in calculateParts(),
+  // where the materialOverrides parameter takes highest precedence for individual parts.
+  // See calculateParts() for the full override chain.
   const materialThickness = pattern.materials?.carcass?.thickness ?? settings.materialThickness;
   const backPanelThickness = pattern.materials?.back?.thickness ?? settings.backPanelThickness;
   const frontThickness = pattern.materials?.front?.thickness ?? materialThickness;
@@ -263,7 +268,8 @@ export function calculateParts(
   variableOverrides?: Record<string, number>,
   zoneProportions?: number[],
   ruleSet?: RuleSet,
-  materials?: Material[]
+  materials?: Material[],
+  materialOverrides?: Record<string, string>
 ): CutPart[] {
   // Build expression context with ruleSet for construction-aware dimensions
   let context = buildExpressionContext(dimensions, globalSettings, pattern, ruleSet);
@@ -312,9 +318,15 @@ export function calculateParts(
 
   // Process each part rule
   for (const rule of pattern.partRules) {
-    // Resolve material thickness for this part rule
-    // If rule has materialId, use its thickness; otherwise use global material_thickness
-    const resolvedMaterialId = rule.materialId;
+    // Resolve materialId with precedence:
+    // 1. Instance-level override (materialOverrides by rule.id or rule.partName)
+    // 2. Rule's own materialId (from pattern definition)
+    // 3. Pattern default (used by getMaterialThickness as fallback)
+    // 4. Global settings material_thickness (final fallback)
+    const resolvedMaterialId =
+      materialOverrides?.[rule.id] ??
+      materialOverrides?.[rule.partName] ??
+      rule.materialId;
     const partThickness = getMaterialThickness(
       resolvedMaterialId,
       materialsList,
