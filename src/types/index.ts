@@ -30,6 +30,11 @@ export interface Material {
     fireRated?: boolean;
     weight?: number; // kg/m²
   };
+  // Edge banding specific properties
+  edgeBandingWidth?: number; // Visible width of edge banding (e.g., 22mm, 45mm). Only for type 'edge-banding'.
+  compatibleEdgeBandingIds?: string[]; // Edge banding material IDs compatible with this board. Only for board-type materials.
+  matchesMaterialColor?: string; // Color/finish this banding matches (e.g., 'white', 'oak'). Only for type 'edge-banding'.
+  // Timestamps
   createdAt?: string;
   updatedAt?: string;
 }
