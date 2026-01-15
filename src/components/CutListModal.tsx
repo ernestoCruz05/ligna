@@ -32,76 +32,129 @@ interface CutListModalProps {
   onClose: () => void;
 }
 
+type ConsolidatedPart = CutPart & { count: number };
+
+interface CabinetGroup {
+  cabinetName: string;
+  parts: ConsolidatedPart[];
+  materialGroups: Record<string, ConsolidatedPart[]>;
+  totalParts: number;
+}
+
 function CutListTable({ parts, groupByMaterial }: { parts: CutPart[]; groupByMaterial: boolean }) {
-  const consolidatedParts = useMemo(() => {
-    const map = new Map<string, CutPart & { count: number }>();
+  // Group parts by cabinet first, then consolidate identical parts within each cabinet
+  const cabinetGroups = useMemo(() => {
+    const groups: Record<string, CabinetGroup> = {};
     
     for (const part of parts) {
-      const key = `${part.partName}-${part.length}-${part.width}-${part.materialId || 'default'}`;
-      const existing = map.get(key);
-      if (existing) {
-        existing.count += part.quantity;
+      const cabinetKey = part.cabinetName || 'Sem Armário';
+      
+      if (!groups[cabinetKey]) {
+        groups[cabinetKey] = {
+          cabinetName: cabinetKey,
+          parts: [],
+          materialGroups: {},
+          totalParts: 0,
+        };
+      }
+      
+      // Consolidate identical parts within this cabinet
+      const consolidationKey = `${part.partName}-${part.length}-${part.width}-${part.materialId || 'default'}`;
+      const existingPart = groups[cabinetKey].parts.find(
+        p => `${p.partName}-${p.length}-${p.width}-${p.materialId || 'default'}` === consolidationKey
+      );
+      
+      if (existingPart) {
+        existingPart.count += part.quantity;
       } else {
-        map.set(key, { ...part, count: part.quantity });
+        groups[cabinetKey].parts.push({ ...part, count: part.quantity });
       }
     }
     
-    return Array.from(map.values());
+    // Calculate totals and material groups for each cabinet
+    for (const group of Object.values(groups)) {
+      group.totalParts = group.parts.reduce((sum, p) => sum + p.count, 0);
+      
+      // Group by material within cabinet
+      for (const part of group.parts) {
+        const material = part.materialId || 'default';
+        if (!group.materialGroups[material]) {
+          group.materialGroups[material] = [];
+        }
+        group.materialGroups[material].push(part);
+      }
+    }
+    
+    return Object.values(groups);
   }, [parts]);
 
-  const groupedParts = useMemo(() => {
-    if (!groupByMaterial) {
-      return { 'Todas as Peças': consolidatedParts };
-    }
-    
-    const groups: Record<string, (CutPart & { count: number })[]> = {};
-    for (const part of consolidatedParts) {
-      const material = part.materialId || 'default';
-      if (!groups[material]) {
-        groups[material] = [];
-      }
-      groups[material].push(part);
-    }
-    return groups;
-  }, [consolidatedParts, groupByMaterial]);
+  const totalAllParts = cabinetGroups.reduce((sum, g) => sum + g.totalParts, 0);
 
-  const totalParts = consolidatedParts.reduce((sum, p) => sum + p.count, 0);
+  const renderPartsTable = (tableParts: ConsolidatedPart[]) => (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-left text-gray-500 dark:text-gray-400 text-xs uppercase">
+          <th className="py-2 pr-2">{t.cutList.part}</th>
+          <th className="py-2 px-2 text-right">{t.cutList.length}</th>
+          <th className="py-2 px-2 text-right">{t.cutList.width}</th>
+          <th className="py-2 pl-2 text-right">{t.cutList.quantity}</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+        {tableParts.map((part, idx) => (
+          <tr key={idx} className="text-gray-900 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+            <td className="py-2 pr-2 font-medium">{part.partName}</td>
+            <td className="py-2 px-2 text-right font-mono">{part.length.toFixed(1)}</td>
+            <td className="py-2 px-2 text-right font-mono">{part.width.toFixed(1)}</td>
+            <td className="py-2 pl-2 text-right font-mono">{part.count}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
 
   return (
-    <div className="space-y-4">
-      {Object.entries(groupedParts).map(([groupName, groupParts]) => (
-        <div key={groupName}>
-          {groupByMaterial && (
-            <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 border-b border-gray-200 dark:border-gray-600 pb-1">
-              {groupName === 'default' ? 'Material Padrão' : groupName}
-            </h4>
-          )}
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-gray-500 dark:text-gray-400 text-xs uppercase">
-                <th className="py-2 pr-2">{t.cutList.part}</th>
-                <th className="py-2 px-2 text-right">{t.cutList.length}</th>
-                <th className="py-2 px-2 text-right">{t.cutList.width}</th>
-                <th className="py-2 pl-2 text-right">{t.cutList.quantity}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-              {groupParts.map((part, idx) => (
-                <tr key={idx} className="text-gray-900 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                  <td className="py-2 pr-2 font-medium">{part.partName}</td>
-                  <td className="py-2 px-2 text-right font-mono">{part.length.toFixed(1)}</td>
-                  <td className="py-2 px-2 text-right font-mono">{part.width.toFixed(1)}</td>
-                  <td className="py-2 pl-2 text-right font-mono">{part.count}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="space-y-6">
+      {cabinetGroups.map((group, groupIdx) => (
+        <div key={group.cabinetName} className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+          {/* Cabinet Header */}
+          <div className="bg-gray-100 dark:bg-gray-800 px-4 py-3 flex justify-between items-center">
+            <h3 className="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+              <span className="text-xs bg-blue-500 text-white px-2 py-0.5 rounded-full">{groupIdx + 1}</span>
+              {group.cabinetName}
+            </h3>
+            <span className="text-sm text-gray-500 dark:text-gray-400">
+              {group.totalParts} {group.totalParts === 1 ? 'peça' : 'peças'}
+            </span>
+          </div>
+          
+          {/* Parts List */}
+          <div className="p-4 space-y-4">
+            {groupByMaterial ? (
+              // Show parts grouped by material within this cabinet
+              Object.entries(group.materialGroups).map(([material, materialParts]) => (
+                <div key={material}>
+                  <h4 className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase mb-2 flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full bg-amber-500"></span>
+                    {material === 'default' ? 'Material Padrão' : material}
+                  </h4>
+                  {renderPartsTable(materialParts)}
+                </div>
+              ))
+            ) : (
+              // Show all parts for this cabinet
+              renderPartsTable(group.parts)
+            )}
+          </div>
         </div>
       ))}
       
-      <div className="pt-4 border-t border-gray-200 dark:border-gray-600 flex justify-between items-center text-sm">
-        <span className="text-gray-500 dark:text-gray-400">Total</span>
-        <span className="text-gray-900 dark:text-white font-medium">{totalParts} {t.cutList.totalParts}</span>
+      {/* Grand Total */}
+      <div className="pt-4 border-t-2 border-gray-300 dark:border-gray-600 flex justify-between items-center text-sm">
+        <span className="text-gray-600 dark:text-gray-300 font-medium">Total Geral</span>
+        <span className="text-gray-900 dark:text-white font-bold text-lg">
+          {totalAllParts} {t.cutList.totalParts}
+        </span>
       </div>
     </div>
   );
